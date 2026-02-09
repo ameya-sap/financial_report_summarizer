@@ -43,7 +43,7 @@ def retrieve_financial_data(query: str, quarter: str = None) -> str:
     # Query ChromaDB
     results = collection.query(
         query_embeddings=[query_embedding],
-        n_results=5,
+        n_results=15,
         where=where_clause if where_clause else None
     )
     
@@ -76,6 +76,10 @@ root_agent = LlmAgent(
     instruction=(
         "You are a financial analyst. Read the exact details from the provided tool "
         "to answer the user's questions about earnings. "
+        "When using the retrieve_financial_data tool, DO NOT pass the user's full conversational sentence. "
+        "Extract only the core financial keywords. "
+        "If the initial tool call does not contain the answer, you must NOT give up. Call the tool a second time using synonymous financial terms (e.g., if 'dividend' fails, try 'stockholder return'). "
+        "Answer the user's queries directly based on the text. If a user asks about an entity that the document groups together (e.g., 'Class A, Class B, and Class C shares'), provide the aggregate figure present in the text. Explicitly state that the figure is a combined aggregate rather than apologizing for a missing breakdown."
         "When users ask for a specific segment like 'Cloud', "
         "verify that the retrieved 'Section' or 'Chart Description' explicitly mentions 'Cloud'. "
         "If you find multiple charts (e.g., Services vs Cloud), only display the one that matches the LOB. "

@@ -130,8 +130,15 @@ def process_document(pdf_path: Path):
                     print(f"    -> Failed to describe image: {e}")
             continue
             
-        # For tables, text, headings, docling provides export_to_markdown
-        if hasattr(element, "export_to_markdown"):
+        # Specifically parse tables as HTML, others as Markdown
+        if element.label == DocItemLabel.TABLE:
+            try:
+                table_html = element.export_to_html(doc=doc)
+                if table_html:
+                    markdown_lines.append(f"```html\n{table_html}\n```")
+            except Exception as e:
+                print(f"    -> Warning: Could not export table to HTML: {e}")
+        elif hasattr(element, "export_to_markdown"):
             md_text = element.export_to_markdown(doc=doc)
             if md_text:
                 markdown_lines.append(md_text)
@@ -151,7 +158,7 @@ def process_document(pdf_path: Path):
     
     # Sub-split large chunks (recursive character)
     chunk_size = 2000
-    chunk_overlap = 200
+    chunk_overlap = 500
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size, chunk_overlap=chunk_overlap
     )
