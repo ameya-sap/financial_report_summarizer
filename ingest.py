@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-GCP_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "please_update")
+GCP_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "gcpsaptesting")
 GCP_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 GOOGLE_GENAI_USE_VERTEXAI = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", True)
 EARNINGS_DIR = Path("earnings")
@@ -26,10 +26,17 @@ IMAGE_CACHE_DIR = EARNINGS_DIR / "image_cache"
 IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Initialize GenAI Client
-client = Client(vertexai=GOOGLE_GENAI_USE_VERTEXAI, project=GCP_PROJECT, location=GCP_LOCATION)
+client = Client(vertexai=bool(GOOGLE_GENAI_USE_VERTEXAI), project=GCP_PROJECT, location=GCP_LOCATION)
 
 # Initialize ChromaDB
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
+
+# Clear the old collection to prevent duplicates with wrong metadata
+try:
+    chroma_client.delete_collection("financial_reports")
+except Exception as e:
+    print(f"Skipping deletion: {e}")
+
 collection = chroma_client.get_or_create_collection(name="financial_reports")
 
 # Configure Docling
@@ -73,9 +80,15 @@ def process_document(pdf_path: Path):
     doc = result.document
     
     markdown_lines = []
+    current_heading = "Document Start"
     
     print("  Extracting elements and contextualizing images...")
     for element, level in doc.iterate_items():
+        # Track Header Context
+        if element.label == DocItemLabel.SECTION_HEADER or (hasattr(element.label, 'name') and element.label.name.startswith('heading')):
+            if hasattr(element, "text") and element.text:
+                current_heading = element.text
+                
         if element.label == DocItemLabel.PICTURE:
             image_obj = element.get_image(doc)
             if image_obj:
@@ -86,11 +99,33 @@ def process_document(pdf_path: Path):
                 with open(img_path, "rb") as f:
                     img_bytes = f.read()
                 
-                print(f"    -> Found chart, fetching Gemini description...")
+                print(f"    -> Found chart under heading '{current_heading}', fetching Gemini description...")
                 try:
                     description = describe_image(img_bytes)
-                    # Insert the text description and metadata link directly into the markdown flow
-                    markdown_lines.append(f"\n[Chart Description]\n{description}\n[Source Image: {img_path}]\n")
+                    
+                    # Store chart as a standalone chunk in ChromaDB
+                    chart_id = f"{filename}_chart_{uuid.uuid4().hex}"
+                    chart_meta = {
+                        "Quarter": quarter,
+                        "Document_Type": "chart", # Explicitly label as a chart
+                        "Company": company,
+                        "Image_Path": str(img_path),
+                        "Header_Path": current_heading,
+                        "Chart_Type": "Financial Visual"
+                    }
+                    
+                    chart_emb_res = client.models.embed_content(
+                        model="text-embedding-005",
+                        contents=description
+                    )
+                    
+                    collection.add(
+                        embeddings=[chart_emb_res.embeddings[0].values],
+                        documents=[description],
+                        metadatas=[chart_meta],
+                        ids=[chart_id]
+                    )
+                    print(f"    -> Stored chart as atomic chunk.")
                 except Exception as e:
                     print(f"    -> Failed to describe image: {e}")
             continue
@@ -103,7 +138,7 @@ def process_document(pdf_path: Path):
 
     full_markdown = "\n\n".join(markdown_lines)
     
-    print("  Chunking Markdown semantics...")
+    print("  Chunking Markdown textual semantics...")
     
     # Split by markdown headers
     headers_to_split_on = [
@@ -142,17 +177,12 @@ def process_document(pdf_path: Path):
             "Company": company,
             "Header_Path": header_path
         }
-        
-        # Look for image path in the chunk text
-        img_match = re.search(r"\[Source Image: (.*?)\]", chunk_text)
-        if img_match:
-            meta["Image_Path"] = img_match.group(1)
             
         texts.append(chunk_text)
         metadatas.append(meta)
-        ids.append(f"{filename}_chunk_{i}")
+        ids.append(f"{filename}_text_chunk_{i}")
 
-    print(f"  Generated {len(texts)} chunks. Vectorizing with text-embedding-005...")
+    print(f"  Generated {len(texts)} text chunks. Vectorizing...")
     
     if texts:
         embeddings = []

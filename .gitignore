@@ -35,3 +35,6 @@ earnings/image_cache/
 .idea/
 *.swp
 *.swo
+
+# ADK
+earnings/.adk/

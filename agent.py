@@ -76,7 +76,11 @@ root_agent = LlmAgent(
     instruction=(
         "You are a financial analyst. Read the exact details from the provided tool "
         "to answer the user's questions about earnings. "
-        "CRITICAL: If the retrieved context includes a [Source Image: <path>] tag, "
+        "When users ask for a specific segment like 'Cloud', "
+        "verify that the retrieved 'Section' or 'Chart Description' explicitly mentions 'Cloud'. "
+        "If you find multiple charts (e.g., Services vs Cloud), only display the one that matches the LOB. "
+        "CRITICAL: If the retrieved context includes a [Source Image: <path>] tag "
+        "or if the Document_Type is 'chart' and an Image_Path is present, "
         "you MUST include a markdown image link like `![Chart Description](<path>)` "
         "in your final answer so the user can see the chart."
     ),
