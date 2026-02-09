@@ -1,7 +1,13 @@
 import os
+import mimetypes
+from google.adk.tools import ToolContext
+from google.genai import types
 import chromadb
 from google.adk.agents import LlmAgent
 from google.genai import Client
+from google.adk.tools import ToolContext
+import google.genai.types as types
+import mimetypes
 
 from dotenv import load_dotenv
 
@@ -22,7 +28,7 @@ DB_PATH = os.path.join(BASE_DIR, "chroma_db")
 chroma_client = chromadb.PersistentClient(path=DB_PATH)
 collection = chroma_client.get_or_create_collection(name="financial_reports")
 
-def retrieve_financial_data(query: str, quarter: str = None) -> str:
+async def retrieve_financial_data(tool_context: ToolContext, query: str, quarter: str = None) -> str:
     """Retrieves exact financial details, tables, or chart descriptions from reports.
     
     Args:
@@ -62,7 +68,19 @@ def retrieve_financial_data(query: str, quarter: str = None) -> str:
         
         # Inject explicit image link if present
         if meta.get("Image_Path"):
-            chunk_text += f"[Source Image: {meta['Image_Path']}]\n"
+            img_path = meta['Image_Path']
+            abs_img_path = os.path.join(BASE_DIR, img_path)
+            try:
+                mime_type, _ = mimetypes.guess_type(abs_img_path)
+                if not mime_type:
+                    mime_type = "image/png"
+                with open(abs_img_path, "rb") as bf:
+                    image_bytes = bf.read()
+                image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+                artifact_id = await tool_context.save_artifact(image_part, os.path.basename(img_path))
+                chunk_text += f"[Source Image Artifact: '{artifact_id}']\n"
+            except Exception as e:
+                chunk_text += f"[Source Image: {img_path}]\n"
             
         chunk_text += f"\n{doc}\n"
         formatted_results.append(chunk_text)
@@ -83,10 +101,10 @@ root_agent = LlmAgent(
         "When users ask for a specific segment like 'Cloud', "
         "verify that the retrieved 'Section' or 'Chart Description' explicitly mentions 'Cloud'. "
         "If you find multiple charts (e.g., Services vs Cloud), only display the one that matches the LOB. "
-        "CRITICAL: If the retrieved context includes a [Source Image: <path>] tag "
-        "or if the Document_Type is 'chart' and an Image_Path is present, "
-        "you MUST include a markdown image link like `![Chart Description](<path>)` "
-        "in your final answer so the user can see the chart."
+        "CRITICAL: If the retrieved context includes a [Source Image Artifact: '<id>'] tag "
+        "or if the Document_Type is 'chart' and an Artifact is present, "
+        "you MUST include the artifact ID in your response so the ADK web interface can display it automatically (e.g. 'Here is the chart: Artifact <id>'). "
+        "Do NOT use markdown image links if an artifact ID is provided."
     ),
     tools=[retrieve_financial_data],
 )
