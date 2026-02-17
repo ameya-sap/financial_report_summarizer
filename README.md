@@ -95,4 +95,8 @@ Once the agent is running, try asking contextually heavy financial questions. He
 3. **Complex Segment Analysis:**
    > *"What was the Google Cloud revenue for Q1 2025? Please provide the chart."*
 
+### Example Output
+
+![Output example](example_output/Example%20Output.png)
+
 *Because of our precise chunking strategy, the agent will gracefully return exact figures alongside Markdown links to the exact visual charts extracted during ingestion!*

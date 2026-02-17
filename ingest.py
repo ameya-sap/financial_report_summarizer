@@ -107,7 +107,7 @@ def process_document(pdf_path: Path):
                     chart_id = f"{filename}_chart_{uuid.uuid4().hex}"
                     chart_meta = {
                         "Quarter": quarter,
-                        "Document_Type": "chart", # Explicitly label as a chart
+                        "Content_Type": "chart", # Explicitly label as a chart
                         "Company": company,
                         "Image_Path": str(img_path),
                         "Header_Path": current_heading,
@@ -135,11 +135,30 @@ def process_document(pdf_path: Path):
             try:
                 table_html = element.export_to_html(doc=doc)
                 if table_html:
-                    markdown_lines.append(f"```html\n{table_html}\n```")
+                    # NEW REQUIREMENT: Store table directly into the collection as atomic chunk
+                    table_id = f"{filename}_table_{uuid.uuid4().hex}"
+                    table_meta = {
+                        "Quarter": quarter,
+                        "Document_Type": doc_type,
+                        "Content_Type": "table",
+                        "Company": company,
+                        "Header_Path": current_heading
+                    }
+                    table_emb_res = client.models.embed_content(
+                        model="text-embedding-005",
+                        contents=table_html
+                    )
+                    collection.add(
+                        embeddings=[table_emb_res.embeddings[0].values],
+                        documents=[table_html],
+                        metadatas=[table_meta],
+                        ids=[table_id]
+                    )
+                    print(f"    -> Stored table as atomic chunk.")
             except Exception as e:
                 print(f"    -> Warning: Could not export table to HTML: {e}")
-        elif hasattr(element, "export_to_markdown"):
-            md_text = element.export_to_markdown(doc=doc)
+        elif hasattr(element, "text"):
+            md_text = element.text
             if md_text:
                 markdown_lines.append(md_text)
 
@@ -147,45 +166,23 @@ def process_document(pdf_path: Path):
     
     print("  Chunking Markdown textual semantics...")
     
-    # Split by markdown headers
-    headers_to_split_on = [
-        ("#", "Header 1"),
-        ("##", "Header 2"),
-        ("###", "Header 3"),
-    ]
-    markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
-    md_header_splits = markdown_splitter.split_text(full_markdown)
-    
-    # Sub-split large chunks (recursive character)
-    chunk_size = 2000
-    chunk_overlap = 500
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size, chunk_overlap=chunk_overlap
-    )
-    splits = text_splitter.split_documents(md_header_splits)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
+    text_chunks = splitter.split_text(full_markdown)
     
     texts = []
     metadatas = []
     ids = []
     
-    for i, chunk in enumerate(splits):
-        chunk_text = chunk.page_content
-        
-        # Build Header Path
-        header_path = " > ".join(
-            [chunk.metadata.get(f"Header {k}", "") for k in range(1, 4) if chunk.metadata.get(f"Header {k}")]
-        )
-        if not header_path:
-             header_path = "Document Start"
-        
+    for i, text in enumerate(text_chunks):
         meta = {
             "Quarter": quarter,
             "Document_Type": doc_type,
+            "Content_Type": "text",
             "Company": company,
-            "Header_Path": header_path
+            "Header_Path": "Text_Chunk"
         }
             
-        texts.append(chunk_text)
+        texts.append(text)
         metadatas.append(meta)
         ids.append(f"{filename}_text_chunk_{i}")
 

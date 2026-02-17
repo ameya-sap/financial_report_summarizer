@@ -39,3 +39,5 @@ earnings/image_cache/
 # ADK
 earnings/.adk/
 test_output.txt
+.adk/session.db
+.adk/
