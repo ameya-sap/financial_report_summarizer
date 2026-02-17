@@ -38,7 +38,7 @@ This architecture leverages two cutting-edge models deployed on Vertex AI:
    
    Ensure your `.env` contains the required GCP attributes:
    ```env
-   GOOGLE_CLOUD_PROJECT=gcpsaptesting
+   GOOGLE_CLOUD_PROJECT=...
    GOOGLE_CLOUD_LOCATION=us-central1
    GOOGLE_GENAI_USE_VERTEXAI=1
    ```
